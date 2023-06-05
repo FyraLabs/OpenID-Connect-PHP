@@ -29,6 +29,8 @@ use phpseclib3\Crypt\PublicKeyLoader;
 use phpseclib3\Crypt\RSA;
 use phpseclib3\Math\BigInteger;
 use stdClass;
+use Firebase\JWT\JWK;
+use Firebase\JWT\JWT;
 use function bin2hex;
 use function is_object;
 use function random_bytes;
@@ -1105,56 +1107,18 @@ class OpenIDConnectClient
      */
     public function verifyJWTSignature(string $jwt): bool
     {
-        $parts = explode('.', $jwt);
-        if (!isset($parts[0])) {
-            throw new OpenIDConnectClientException('Error missing part 0 in token');
-        }
-        $signature = base64url_decode(array_pop($parts));
-        if (false === $signature || '' === $signature) {
-            throw new OpenIDConnectClientException('Error decoding signature from token');
-        }
-        $header = json_decode(base64url_decode($parts[0]), false);
-        if (!is_object($header)) {
-            throw new OpenIDConnectClientException('Error decoding JSON from token header');
-        }
-        if (!isset($header->alg)) {
-            throw new OpenIDConnectClientException('Error missing signature type in token header');
+        $jwks = json_decode($this->fetchURL($this->getProviderConfigValue('jwks_uri')), true);
+        if (!is_array($jwks)) {
+            throw new OpenIDConnectClientException('Error decoding JSON from jwks_uri');
         }
 
-        $payload = implode('.', $parts);
-        switch ($header->alg) {
-            case 'RS256':
-            case 'PS256':
-            case 'PS512':
-            case 'RS384':
-            case 'RS512':
-                $hashType = 'sha' . substr($header->alg, 2);
-                $signatureType = $header->alg === 'PS256' || $header->alg === 'PS512' ? 'PSS' : '';
-                if (isset($header->jwk)) {
-                    $jwk = $header->jwk;
-                    $this->verifyJWKHeader($jwk);
-                } else {
-                    $jwks = json_decode($this->fetchURL($this->getProviderConfigValue('jwks_uri')), false);
-                    if ($jwks === NULL) {
-                        throw new OpenIDConnectClientException('Error decoding JSON from jwks_uri');
-                    }
-                    $jwk = $this->getKeyForHeader($jwks->keys, $header);
-                }
-
-                $verified = $this->verifyRSAJWTSignature($hashType,
-                    $jwk,
-                    $payload, $signature, $signatureType);
-                break;
-            case 'HS256':
-            case 'HS512':
-            case 'HS384':
-                $hashType = 'SHA' . substr($header->alg, 2);
-                $verified = $this->verifyHMACJWTSignature($hashType, $this->getClientSecret(), $payload, $signature);
-                break;
-            default:
-                throw new OpenIDConnectClientException('No support for signature type: ' . $header->alg);
+        try {
+            JWT::decode($jwt, JWK::parseKeySet($jwks));
+        } catch (\Exception $e) {
+            throw new OpenIDConnectClientException('Error decoding JWT: '.$e->getMessage(), $e->getCode(), $e);
         }
-        return $verified;
+
+        return true;
     }
 
     /**
