@@ -7,7 +7,7 @@
         "ext-json": "*",
         "ext-curl": "*",
         "phpseclib/phpseclib": "~3.0",
-        "firebase/php-jwt": "^6.5"
+        "firebase/php-jwt": "*"
     },
     "require-dev": {
         "roave/security-advisories": "dev-latest",
